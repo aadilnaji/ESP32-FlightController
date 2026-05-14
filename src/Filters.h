@@ -4,7 +4,9 @@
 #include <Arduino.h>
 #include <math.h>
 
-/** IIR filter library: PT1/PT2/PT3 lowpass, biquad, slew limiter, gyro filter bank. */
+/** IIR filter library: PT1/PT2/PT3 lowpass, biquad, slew limiter, gyro filter bank. 
+ *  Filter topology and gyro/D-term filter bank inspired by Betaflight.
+*/
 
 // ===== PT1 (1st-order IIR lowpass) =====
 

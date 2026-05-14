@@ -4,7 +4,9 @@
 #include <Arduino.h>
 #include "Filters.h"
 
-/** PID controller with D-on-measurement, feed-forward, I-term relax, anti-windup, and per-term filtering. */
+/** PID controller with D-on-measurement, feed-forward, I-term relax, anti-windup, and per-term filtering. 
+ *  Control structure inspired by Betaflight
+*/
 
 enum ItermRelaxMode {
     ITERM_RELAX_OFF = 0,

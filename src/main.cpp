@@ -1,4 +1,10 @@
-/** ESP32 flight controller: cascaded 250Hz angle / 1000Hz rate loops, Madgwick fusion, IBUS RC, WiFi telemetry. */
+/** ESP32 flight controller: cascaded 250Hz angle / 1000Hz rate loops, Madgwick fusion, IBUS RC, WiFi telemetry. 
+ *  
+ *  Author: Aadil Naji
+ *  Credits: 
+ *  - Sebastian Madgwick (AHRS algorithm)
+ *  - Betaflight (PID and filter design inspiration).
+*/
 
 #include <Arduino.h>
 #include <Wire.h>

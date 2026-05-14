@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <math.h>
 
-/** Madgwick AHRS sensor fusion (gradient descent). */
+/** Madgwick AHRS sensor fusion (gradient descent). Algorithm credit: Sebastian O.H. Madgwick */
 
 class MadgwickAHRS {
 public:
