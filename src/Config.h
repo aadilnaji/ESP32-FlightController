@@ -6,6 +6,7 @@
 /** Compile-time configuration: pins, timing, control limits, gains, filter cutoffs. */
 
 // ===== WIFI =====
+// Add Wifi credential for ESP32 to connect to 
 #define WIFI_SSID     "ssid"
 #define WIFI_PASSWORD "password"
 
