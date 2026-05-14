@@ -12,9 +12,9 @@ An implementation of ESP32-based flight control firmware for a quadcopter.
 - **Frame:** Quadcopter (X configuration)
 
 ### Pictures
-![Drone — Iso view](Gallery/img/drone-iso.png)
-![Drone — top view](Gallery/img/drone-top.jpg)
-![Wiring](Gallery/img/wiring.jpg)
+![Drone — Iso view](Gallery/drone-iso.png)
+![Drone — top view](Gallery/drone-top.jpg)
+![Wiring](Gallery/wiring.jpg)
 
 ## Dependencies
 
