@@ -1,7 +1,7 @@
 #ifndef CALIBRATION_H
 #define CALIBRATION_H
 
-/** Per-airframe calibration values. Flip CALIBRATE_* to true to recapture; serial prints new defines on completion. */
+/** Per-airframe calibration values. Flip CALIBRATE_* to true to redo calibration; Paste serial printed new defines on completion. */
 
 // ===== MAGNETOMETER =====
 #define CALIBRATE_MAG   false
