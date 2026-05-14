@@ -8,235 +8,17 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include "Config.h"
+#include "Calibration.h"
 #include "MPU6050.h"
 #include "HMC5883L.h"
 #include "Madgwick.h"
 #include "Filters.h"
 #include "PID.h"
 #include "IBUSReceiver.h"
+#include "Logger.h"
+#include "Telemetry.h"
 #include "dashboard.h"
-
-// ===== WIFI =====
-const char* WIFI_SSID     = "ssid";
-const char* WIFI_PASSWORD = "password";
-
-// ===== PINS =====
-const int ESC1_PIN = 25, ESC2_PIN = 26, ESC3_PIN = 27, ESC4_PIN = 14;
-#define IBUS_RX_PIN 16
-#define IBUS_TX_PIN -1
-#define I2C_SDA 21
-#define I2C_SCL 22
-#ifndef LED_BUILTIN
-#define LED_BUILTIN 2
-#endif
-
-// ===== ESC =====
-const int ESC_MIN_US = 1000, ESC_MAX_US = 1940, ESC_PWM_FREQ_HZ = 490;
-#define THROTTLE_OUTPUT_MIN 1000
-#define THROTTLE_OUTPUT_MAX 1940
-#define THROTTLE_DEADBAND 50
-#define MOTOR_IDLE_THROTTLE 1050
-#define MOTOR_IDLE_ENABLED true
-
-// ===== IBUS CHANNELS =====
-#define CH_THROTTLE 3
-#define CH_YAW 4
-#define CH_PITCH 2
-#define CH_ROLL 1
-#define CH_ARM_SWITCH 5
-#define CH_MODE_SWITCH 6
-
-// ===== ARMING =====
-#define ARM_SWITCH_THRESHOLD 1700
-#define DISARM_SWITCH_THRESHOLD 1300
-#define THROTTLE_ARM_MAX 1050
-#define RC_TIMEOUT_MS 500
-
-// ===== TIMING =====
-const uint32_t GYRO_LOOP_HZ = 1000;
-const uint32_t GYRO_LOOP_US = 1000000 / GYRO_LOOP_HZ;
-const uint32_t FUSION_DIVIDER = 4;
-const uint32_t MAG_DIVIDER = 67;
-
-// ===== CONTROL LIMITS =====
-#define MAX_ANGLE_DEG 30.0f
-#define MAX_RATE_DPS 500.0f
-
-// ===== MADGWICK =====
-#define MADGWICK_BETA_STARTUP 0.5f
-#define MADGWICK_BETA_FLIGHT 0.1f
-
-// ===== RATES =====
-#define RC_RATE_ROLL 100
-#define RC_RATE_PITCH 100
-#define RC_RATE_YAW 100
-#define SUPER_RATE_ROLL 70
-#define SUPER_RATE_PITCH 70
-#define SUPER_RATE_YAW 50
-#define RC_EXPO_ROLL 20
-#define RC_EXPO_PITCH 20
-#define RC_EXPO_YAW 10
-#define RATE_LIMIT_ROLL 500
-#define RATE_LIMIT_PITCH 500
-#define RATE_LIMIT_YAW 400
-
-// ===== TPA =====
-#define TPA_BREAKPOINT 1700
-#define TPA_SCALE 15
-
-// ===== FILTERS =====
-#define GYRO_LOWPASS_ENABLED true
-#define GYRO_LOWPASS_HZ 85.0f
-#define DTERM_LOWPASS1_ENABLED true
-#define DTERM_LOWPASS1_HZ 100.0f
-#define DTERM_LOWPASS2_ENABLED false
-#define DTERM_LOWPASS2_HZ 200.0f
-#define DTERM_NOTCH_ENABLED false
-#define DTERM_NOTCH_HZ 150.0f
-#define DTERM_NOTCH_Q 5.0f
-#define FTERM_FILTER_ENABLED true
-#define FTERM_FILTER_HZ 100.0f
-#define ITERM_RELAX_ENABLED false
-#define ITERM_RELAX_HZ 15.0f
-#define ITERM_RELAX_CUTOFF 40.0f
-#define PTERM_FILTER_ENABLED false
-#define PTERM_FILTER_HZ 100.0f
-
-// ===== RATE PID =====
-#define RATE_ROLL_KP 2.4f
-#define RATE_ROLL_KI 1.6f
-#define RATE_ROLL_KD 0.0006f
-#define RATE_ROLL_KF 0.02f
-#define RATE_ROLL_ILIMIT 60.0f
-#define RATE_PITCH_KP 2.4f
-#define RATE_PITCH_KI 1.6f
-#define RATE_PITCH_KD 0.0006f
-#define RATE_PITCH_KF 0.02f
-#define RATE_PITCH_ILIMIT 60.0f
-#define RATE_YAW_KP 1.3f
-#define RATE_YAW_KI 1.6f
-#define RATE_YAW_KD 0.0f
-#define RATE_YAW_KF 0.01f
-#define RATE_YAW_ILIMIT 80.0f
-
-// ===== ANGLE PID =====
-#define ANGLE_ROLL_KP 1.25f
-#define ANGLE_ROLL_KI 0.5f
-#define ANGLE_ROLL_KD 0.0f
-#define ANGLE_ROLL_ILIMIT 40.0f
-#define ANGLE_PITCH_KP 1.3f
-#define ANGLE_PITCH_KI 0.5f
-#define ANGLE_PITCH_KD 0.0f
-#define ANGLE_PITCH_ILIMIT 40.0f
-
-// ===== MAGNETOMETER CALIBRATION =====
-// Flip CALIBRATE_MAG to true to recapture; serial output prints the new defines.
-#define CALIBRATE_MAG   false
-
-#define MAG_OFFSET_X  44.60f
-#define MAG_OFFSET_Y  -192.40f
-#define MAG_OFFSET_Z  -62.40f
-#define MAG_SCALE_X   0.9775f
-#define MAG_SCALE_Y   0.9881f
-#define MAG_SCALE_Z   1.0364f
-
-// ===== ACCELEROMETER CALIBRATION =====
-// Flip CALIBRATE_ACCEL to true to recapture; serial output prints the new defines.
-#define CALIBRATE_ACCEL false
-
-#define ACCEL_OFFSET_X 0.036650f
-#define ACCEL_OFFSET_Y 0.049102f
-#define ACCEL_OFFSET_Z -0.102405f
-
-// ===== LEVEL TRIM =====
-// Positive roll = drone needs right roll to hover level; positive pitch = forward.
-#define LEVEL_TRIM_ROLL_DEG   -1.2f
-#define LEVEL_TRIM_PITCH_DEG  -1.2f
-
-// ===== LOGGER =====
-const size_t LOG_SAMPLES = 1500;
-#define LOG_RAW_GYRO
-#define LOG_FILTERED_GYRO
-#define LOG_FUSED_ANGLES
-#define LOG_PID_OUTPUTS
-#define LOG_PID_COMMANDS
-#define LOG_MOTOR_COMMANDS
-
-enum FlightMode { MODE_ACRO = 0, MODE_STABILIZE = 1 };
-
-struct TelemetryData {
-    float roll, pitch, yaw;
-    float angleErrRoll, angleErrPitch;
-
-    float gyroX, gyroY, gyroZ;           // raw
-    float gyroXf, gyroYf, gyroZf;        // filtered
-
-    float accelX, accelY, accelZ;
-
-    float magX, magY, magZ;
-    bool magValid;
-
-    float rateSetRoll, rateSetPitch, rateSetYaw;
-    float rateErrRoll, rateErrPitch, rateErrYaw;
-
-    float pTermRoll, pTermPitch, pTermYaw;
-    float iTermRoll, iTermPitch, iTermYaw;
-    float dTermRoll, dTermPitch, dTermYaw;
-    float fTermRoll, fTermPitch, fTermYaw;
-    float pidTotalRoll, pidTotalPitch, pidTotalYaw;
-
-    float mixRoll, mixPitch, mixYaw;
-    int throttle, m1, m2, m3, m4;
-    bool motorSaturated;
-    char saturationAxis;  // 'R', 'P', 'Y', or 0
-
-    float rcRoll, rcPitch, rcYaw;
-    int rcThrottle;
-    int rcArmSwitch, rcModeSwitch;
-
-    bool armed;
-    FlightMode mode;
-    bool rcConnected;
-    bool fusionConverged;
-    bool accelOk;
-    bool magOk;
-    bool airmodeActive;
-
-    uint32_t loopTime;
-    uint32_t loopMin, loopMax;
-    uint32_t loopAvg;
-    uint32_t loopJitter;
-    uint32_t overruns;
-
-    float tpaFactor;
-    float trimRoll, trimPitch;
-
-    bool headlessActive;
-    float headlessRefYaw;
-};
-
-
-typedef struct {
-    uint32_t timestamp_us;
-#ifdef LOG_RAW_GYRO
-    int16_t gyro_x, gyro_y, gyro_z;
-#endif
-#ifdef LOG_FILTERED_GYRO
-    int16_t gyro_xf, gyro_yf, gyro_zf;
-#endif
-#ifdef LOG_FUSED_ANGLES
-    int16_t roll, pitch, yaw;
-#endif
-#ifdef LOG_PID_OUTPUTS
-    int16_t pid_roll, pid_pitch, pid_yaw;
-#endif
-#ifdef LOG_PID_COMMANDS
-    int16_t cmd_roll, cmd_pitch, cmd_yaw;
-#endif
-#ifdef LOG_MOTOR_COMMANDS
-    uint16_t throttle, m1, m2, m3, m4;
-#endif
-} LoopLog;
 
 // ===== GLOBALS =====
 MadgwickFusion fusion(MADGWICK_BETA_STARTUP, MADGWICK_BETA_FLIGHT);
@@ -250,7 +32,6 @@ RateCurve rateCurve;
 TPAController tpa;
 
 portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
-portMUX_TYPE telemetryMux = portMUX_INITIALIZER_UNLOCKED;
 
 volatile bool motorsArmed = false;
 volatile FlightMode flightMode = MODE_STABILIZE;
@@ -272,10 +53,6 @@ volatile float currentFusedYaw = 0.0f;         // shared from flight task to IBU
 #define DEG_TO_RAD 0.017453292519943295f
 #endif
 
-TelemetryData telemetry;
-static LoopLog logs[LOG_SAMPLES];
-volatile bool loggingActive = false, loggingComplete = false;
-volatile uint32_t logIndex = 0, loggingStartMs = 0, loggingDurationMs = 0;
 volatile uint32_t loopTimeMin = UINT32_MAX;
 volatile uint32_t loopTimeMax = 0;
 volatile uint64_t loopTimeSum = 0;
@@ -285,10 +62,6 @@ volatile uint32_t lastLoopTime = 0;
 
 volatile int rcArmSwitchVal = 1000;
 volatile int rcModeSwitchVal = 1000;
-
-static inline int16_t scaleToInt16(float val, float scale) {
-    return (int16_t)constrain((int32_t)roundf(val * scale), -32768, 32767);
-}
 
 // ===== MOTOR FUNCTIONS =====
 void mixAndWriteMotors(int thr, float roll, float pitch, float yaw, int &o1, int &o2, int &o3, int &o4) {
@@ -337,78 +110,6 @@ void transformHeadlessInputs(float& roll, float& pitch, float currentYaw, float 
 
     roll = newRoll;
     pitch = newPitch;
-}
-
-// ===== LOGGER =====
-void printLogHeader() {
-    Serial.print("timestamp_us");
-#ifdef LOG_RAW_GYRO
-    Serial.print(",gx,gy,gz");
-#endif
-#ifdef LOG_FILTERED_GYRO
-    Serial.print(",gxf,gyf,gzf");
-#endif
-#ifdef LOG_FUSED_ANGLES
-    Serial.print(",roll,pitch,yaw");
-#endif
-#ifdef LOG_PID_OUTPUTS
-    Serial.print(",pid_r,pid_p,pid_y");
-#endif
-#ifdef LOG_PID_COMMANDS
-    Serial.print(",cmd_r,cmd_p,cmd_y");
-#endif
-#ifdef LOG_MOTOR_COMMANDS
-    Serial.print(",thr,m1,m2,m3,m4");
-#endif
-    Serial.println();
-}
-
-void dumpLogData() {
-    Serial.println("\n===== DATA DUMP =====");
-    printLogHeader();
-    for (uint32_t i = 0; i < logIndex; i++) {
-        LoopLog &e = logs[i];
-        Serial.print(e.timestamp_us);
-#ifdef LOG_RAW_GYRO
-        Serial.printf(",%.2f,%.2f,%.2f", e.gyro_x/100.0f, e.gyro_y/100.0f, e.gyro_z/100.0f);
-#endif
-#ifdef LOG_FILTERED_GYRO
-        Serial.printf(",%.2f,%.2f,%.2f", e.gyro_xf/100.0f, e.gyro_yf/100.0f, e.gyro_zf/100.0f);
-#endif
-#ifdef LOG_FUSED_ANGLES
-        Serial.printf(",%.2f,%.2f,%.2f", e.roll/100.0f, e.pitch/100.0f, e.yaw/100.0f);
-#endif
-#ifdef LOG_PID_OUTPUTS
-        Serial.printf(",%.1f,%.1f,%.1f", e.pid_roll/10.0f, e.pid_pitch/10.0f, e.pid_yaw/10.0f);
-#endif
-#ifdef LOG_PID_COMMANDS
-        Serial.printf(",%.1f,%.1f,%.1f", e.cmd_roll/10.0f, e.cmd_pitch/10.0f, e.cmd_yaw/10.0f);
-#endif
-#ifdef LOG_MOTOR_COMMANDS
-        Serial.printf(",%u,%u,%u,%u,%u", e.throttle, e.m1, e.m2, e.m3, e.m4);
-#endif
-        Serial.println();
-    }
-    Serial.println("===== END =====\n");
-}
-
-void startLogging(int secs) {
-    portENTER_CRITICAL(&stateMux);
-    logIndex = 0;
-    loggingActive = true;
-    loggingComplete = false;
-    loggingStartMs = millis();
-    loggingDurationMs = (uint32_t)secs * 1000u;
-    portEXIT_CRITICAL(&stateMux);
-    Serial.printf("Logging for %ds\n", secs);
-}
-
-void stopLogging() {
-    portENTER_CRITICAL(&stateMux);
-    loggingActive = false;
-    loggingComplete = true;
-    portEXIT_CRITICAL(&stateMux);
-    Serial.printf("Logged %d samples\n", logIndex);
 }
 
 // ===== INIT FUNCTIONS =====
@@ -596,29 +297,17 @@ void flightTask(void *pvParameters) {
             angleRollPID.resetIterm(); anglePitchPID.resetIterm();
         }
         
-        // Logging
-        if (loggingActive && logIndex < LOG_SAMPLES) {
-            LoopLog e; e.timestamp_us = (uint32_t)loopStart;
-#ifdef LOG_RAW_GYRO
-            e.gyro_x = scaleToInt16(GyroX, 100); e.gyro_y = scaleToInt16(GyroY, 100); e.gyro_z = scaleToInt16(GyroZ, 100);
-#endif
-#ifdef LOG_FILTERED_GYRO
-            e.gyro_xf = scaleToInt16(GyroXf, 100); e.gyro_yf = scaleToInt16(GyroYf, 100); e.gyro_zf = scaleToInt16(GyroZf, 100);
-#endif
-#ifdef LOG_FUSED_ANGLES
-            e.roll = scaleToInt16(fusedRoll, 100); e.pitch = scaleToInt16(fusedPitch, 100); e.yaw = scaleToInt16(fusedYaw, 100);
-#endif
-#ifdef LOG_PID_OUTPUTS
-            e.pid_roll = scaleToInt16(pidRoll, 10); e.pid_pitch = scaleToInt16(pidPitch, 10); e.pid_yaw = scaleToInt16(pidYaw, 10);
-#endif
-#ifdef LOG_PID_COMMANDS
-            e.cmd_roll = scaleToInt16(rollCmd, 10); e.cmd_pitch = scaleToInt16(pitchCmd, 10); e.cmd_yaw = scaleToInt16(yawCmd, 10);
-#endif
-#ifdef LOG_MOTOR_COMMANDS
-            e.throttle = localThrottle; e.m1 = out1; e.m2 = out2; e.m3 = out3; e.m4 = out4;
-#endif
-            logs[logIndex++] = e;
-            if (millis() - loggingStartMs >= loggingDurationMs) { loggingActive = false; loggingComplete = true; }
+        if (Logger::isActive()) {
+            FlightFrame f;
+            f.timestamp_us = loopStart;
+            f.gx = GyroX;   f.gy = GyroY;   f.gz = GyroZ;
+            f.gxf = GyroXf; f.gyf = GyroYf; f.gzf = GyroZf;
+            f.roll = fusedRoll; f.pitch = fusedPitch; f.yaw = fusedYaw;
+            f.pidR = pidRoll;   f.pidP = pidPitch;   f.pidY = pidYaw;
+            f.cmdR = rollCmd;   f.cmdP = pitchCmd;   f.cmdY = yawCmd;
+            f.throttle = localThrottle;
+            f.m1 = out1; f.m2 = out2; f.m3 = out3; f.m4 = out4;
+            Logger::sample(f);
         }
         
         // Telemetry: rate errors and per-axis PID term breakdown
@@ -665,87 +354,70 @@ void flightTask(void *pvParameters) {
         static uint8_t telemCounter = 0;
         if (++telemCounter >= 20) {
             telemCounter = 0;
-            portENTER_CRITICAL(&telemetryMux);
 
-            telemetry.roll = fusedRoll;
-            telemetry.pitch = fusedPitch;
-            telemetry.yaw = fusedYaw;
-            telemetry.angleErrRoll = angleErrRoll;
-            telemetry.angleErrPitch = angleErrPitch;
+            TelemetryData t = {};
+            t.roll = fusedRoll;
+            t.pitch = fusedPitch;
+            t.yaw = fusedYaw;
+            t.angleErrRoll = angleErrRoll;
+            t.angleErrPitch = angleErrPitch;
 
-            telemetry.gyroX = GyroX;
-            telemetry.gyroY = GyroY;
-            telemetry.gyroZ = GyroZ;
-            telemetry.gyroXf = GyroXf;
-            telemetry.gyroYf = GyroYf;
-            telemetry.gyroZf = GyroZf;
+            t.gyroX = GyroX;   t.gyroY = GyroY;   t.gyroZ = GyroZ;
+            t.gyroXf = GyroXf; t.gyroYf = GyroYf; t.gyroZf = GyroZf;
 
-            telemetry.accelX = AccX * 9.81f;
-            telemetry.accelY = AccY * 9.81f;
-            telemetry.accelZ = AccZ * 9.81f;
-            telemetry.magX = MagX;
-            telemetry.magY = MagY;
-            telemetry.magZ = MagZ;
-            telemetry.magValid = magOk;
+            t.accelX = AccX * 9.81f;
+            t.accelY = AccY * 9.81f;
+            t.accelZ = AccZ * 9.81f;
+            t.magX = MagX; t.magY = MagY; t.magZ = MagZ;
+            t.magValid = magOk;
 
-            telemetry.rateSetRoll = rateSetRoll;
-            telemetry.rateSetPitch = rateSetPitch;
-            telemetry.rateSetYaw = rateSetYaw;
-            telemetry.rateErrRoll = rateErrRoll;
-            telemetry.rateErrPitch = rateErrPitch;
-            telemetry.rateErrYaw = rateErrYaw;
+            t.rateSetRoll = rateSetRoll;
+            t.rateSetPitch = rateSetPitch;
+            t.rateSetYaw = rateSetYaw;
+            t.rateErrRoll = rateErrRoll;
+            t.rateErrPitch = rateErrPitch;
+            t.rateErrYaw = rateErrYaw;
 
-            telemetry.pTermRoll = pR;
-            telemetry.pTermPitch = pP;
-            telemetry.pTermYaw = pY;
-            telemetry.iTermRoll = iR;
-            telemetry.iTermPitch = iP;
-            telemetry.iTermYaw = iY;
-            telemetry.dTermRoll = dR;
-            telemetry.dTermPitch = dP;
-            telemetry.dTermYaw = dY;
-            telemetry.fTermRoll = fR;
-            telemetry.fTermPitch = fP;
-            telemetry.fTermYaw = fY;
-            telemetry.pidTotalRoll = rollCmd;
-            telemetry.pidTotalPitch = pitchCmd;
-            telemetry.pidTotalYaw = yawCmd;
+            t.pTermRoll = pR; t.pTermPitch = pP; t.pTermYaw = pY;
+            t.iTermRoll = iR; t.iTermPitch = iP; t.iTermYaw = iY;
+            t.dTermRoll = dR; t.dTermPitch = dP; t.dTermYaw = dY;
+            t.fTermRoll = fR; t.fTermPitch = fP; t.fTermYaw = fY;
+            t.pidTotalRoll = rollCmd;
+            t.pidTotalPitch = pitchCmd;
+            t.pidTotalYaw = yawCmd;
 
-            telemetry.mixRoll = rollCmd;
-            telemetry.mixPitch = pitchCmd;
-            telemetry.mixYaw = yawCmd;
-            telemetry.throttle = localThrottle;
-            telemetry.m1 = out1;
-            telemetry.m2 = out2;
-            telemetry.m3 = out3;
-            telemetry.m4 = out4;
-            telemetry.motorSaturated = saturated;
+            t.mixRoll = rollCmd;
+            t.mixPitch = pitchCmd;
+            t.mixYaw = yawCmd;
+            t.throttle = localThrottle;
+            t.m1 = out1; t.m2 = out2; t.m3 = out3; t.m4 = out4;
+            t.motorSaturated = saturated;
 
-            telemetry.rcRoll = localRcRoll;
-            telemetry.rcPitch = localRcPitch;
-            telemetry.rcYaw = localRcYaw;
-            telemetry.rcThrottle = localThrottle;
+            t.rcRoll = localRcRoll;
+            t.rcPitch = localRcPitch;
+            t.rcYaw = localRcYaw;
+            t.rcThrottle = localThrottle;
 
-            telemetry.armed = localArmed;
-            telemetry.mode = localMode;
-            telemetry.fusionConverged = fusionConverged;
-            telemetry.airmodeActive = airmodeAllowed;
-            telemetry.tpaFactor = tpaFactor;
+            t.armed = localArmed;
+            t.mode = localMode;
+            t.fusionConverged = fusionConverged;
+            t.airmodeActive = airmodeAllowed;
+            t.tpaFactor = tpaFactor;
 
-            telemetry.trimRoll = trimR;
-            telemetry.trimPitch = trimP;
+            t.trimRoll = trimR;
+            t.trimPitch = trimP;
 
-            telemetry.headlessActive = headlessModeActive;
-            telemetry.headlessRefYaw = headlessReferenceYaw;
+            t.headlessActive = headlessModeActive;
+            t.headlessRefYaw = headlessReferenceYaw;
 
-            telemetry.loopTime = loopTime;
-            telemetry.loopMin = loopTimeMin;
-            telemetry.loopMax = loopTimeMax;
-            telemetry.loopAvg = loopCount > 0 ? (uint32_t)(loopTimeSum / loopCount) : 0;
-            telemetry.loopJitter = jitter;
-            telemetry.overruns = loopOverruns;
-            
-            portEXIT_CRITICAL(&telemetryMux);
+            t.loopTime = loopTime;
+            t.loopMin = loopTimeMin;
+            t.loopMax = loopTimeMax;
+            t.loopAvg = loopCount > 0 ? (uint32_t)(loopTimeSum / loopCount) : 0;
+            t.loopJitter = jitter;
+            t.overruns = loopOverruns;
+
+            Telemetry::publish(t);
         }
     }
 }
@@ -795,82 +467,7 @@ void setupWebServer() {
     });
     
     server.on("/telem", HTTP_GET, []() {
-        TelemetryData s;
-        portENTER_CRITICAL(&telemetryMux);
-        s = telemetry;
-        portEXIT_CRITICAL(&telemetryMux);
-        
-        bool armed, rc;
-        FlightMode mode;
-        int armSw = 1000, modeSw = 1000;
-        
-        portENTER_CRITICAL(&stateMux);
-        armed = motorsArmed;
-        mode = flightMode;
-        rc = rcConnected;
-        armSw = rcArmSwitchVal;
-        modeSw = rcModeSwitchVal;
-        portEXIT_CRITICAL(&stateMux);
-        
-        // Compact JSON: short keys cut bandwidth on the ESP32 web server
-        String json = "{";
-
-        json += "\"r\":" + String(s.roll, 1);
-        json += ",\"p\":" + String(s.pitch, 1);
-        json += ",\"y\":" + String(s.yaw, 1);
-        json += ",\"ae\":[" + String(s.angleErrRoll, 1) + "," + String(s.angleErrPitch, 1) + "]";
-
-        json += ",\"rc\":[" + String(s.rcRoll, 3) + "," + String(s.rcPitch, 3) + "," +
-                String(s.rcYaw, 3) + "," + String(s.rcThrottle) + "]";
-        json += ",\"rcs\":[" + String(armSw) + "," + String(modeSw) + "]";
-
-        json += ",\"gr\":[" + String(s.gyroX, 1) + "," + String(s.gyroY, 1) + "," + String(s.gyroZ, 1) + "]";
-        json += ",\"gf\":[" + String(s.gyroXf, 1) + "," + String(s.gyroYf, 1) + "," + String(s.gyroZf, 1) + "]";
-
-        json += ",\"rs\":[" + String(s.rateSetRoll, 1) + "," + String(s.rateSetPitch, 1) + "," + String(s.rateSetYaw, 1) + "]";
-        json += ",\"re\":[" + String(s.rateErrRoll, 1) + "," + String(s.rateErrPitch, 1) + "," + String(s.rateErrYaw, 1) + "]";
-
-        json += ",\"pp\":[" + String(s.pTermRoll, 0) + "," + String(s.pTermPitch, 0) + "," + String(s.pTermYaw, 0) + "]";
-        json += ",\"pi\":[" + String(s.iTermRoll, 0) + "," + String(s.iTermPitch, 0) + "," + String(s.iTermYaw, 0) + "]";
-        json += ",\"pd\":[" + String(s.dTermRoll, 0) + "," + String(s.dTermPitch, 0) + "," + String(s.dTermYaw, 0) + "]";
-        json += ",\"pf\":[" + String(s.fTermRoll, 0) + "," + String(s.fTermPitch, 0) + "," + String(s.fTermYaw, 0) + "]";
-        json += ",\"pt\":[" + String(s.pidTotalRoll, 1) + "," + String(s.pidTotalPitch, 1) + "," + String(s.pidTotalYaw, 1) + "]";
-
-        json += ",\"thr\":" + String(s.throttle);
-        json += ",\"m1\":" + String(s.m1);
-        json += ",\"m2\":" + String(s.m2);
-        json += ",\"m3\":" + String(s.m3);
-        json += ",\"m4\":" + String(s.m4);
-        json += ",\"mix\":[" + String(s.mixRoll, 1) + "," + String(s.mixPitch, 1) + "," + String(s.mixYaw, 1) + "]";
-        json += ",\"sat\":" + String(s.motorSaturated ? "\"SAT\"" : "\"None\"");
-
-        json += ",\"acc\":[" + String(s.accelX, 2) + "," + String(s.accelY, 2) + "," + String(s.accelZ, 2) + "]";
-        json += ",\"mag\":[" + String(s.magX, 1) + "," + String(s.magY, 1) + "," + String(s.magZ, 1) + "]";
-
-        json += ",\"armed\":" + String(armed ? "true" : "false");
-        json += ",\"mode\":" + String((int)mode);
-        json += ",\"rcOk\":" + String(rc ? "true" : "false");
-        json += ",\"conv\":" + String(s.fusionConverged ? "true" : "false");
-        json += ",\"accOk\":true";
-        json += ",\"magOk\":" + String(s.magValid ? "true" : "false");
-        json += ",\"air\":" + String(s.airmodeActive ? "true" : "false");
-        json += ",\"gfOn\":" + String(gyroFilter.isEnabled() ? "true" : "false");
-
-        json += ",\"tpa\":" + String(s.tpaFactor, 2);
-        json += ",\"trim\":[" + String(s.trimRoll, 2) + "," + String(s.trimPitch, 2) + "]";
-
-        json += ",\"hl\":" + String(s.headlessActive ? "true" : "false");
-        json += ",\"hlRef\":" + String(s.headlessRefYaw, 1);
-
-        json += ",\"lp\":" + String(s.loopTime);
-        json += ",\"ls\":[" + String(s.loopTime) + "," + String(s.loopMin) + "," +
-                String(s.loopMax) + "," + String(s.loopAvg) + "," +
-                String(s.loopJitter) + "," + String(s.overruns) + "]";
-        json += ",\"up\":" + String(millis() / 1000);
-
-        json += "}";
-        
-        server.send(200, "application/json", json);
+        server.send(200, "application/json", Telemetry::buildJson());
     });
     
     server.on("/anglepid", HTTP_GET, []() {
@@ -1052,9 +649,9 @@ void parseSerialLine(String &line) {
     line.trim(); if (line.length() == 0) return;
     String s = line; s.toUpperCase();
     
-    if (s.startsWith("L")) { startLogging(s.substring(1).toInt() > 0 ? s.substring(1).toInt() : 5); return; }
-    if (s == "S") { stopLogging(); return; }
-    if (s == "D") { if (loggingComplete) dumpLogData(); return; }
+    if (s.startsWith("L")) { Logger::start(s.substring(1).toInt() > 0 ? s.substring(1).toInt() : 5); return; }
+    if (s == "S") { Logger::stop(); return; }
+    if (s == "D") { if (Logger::hasData()) Logger::dump(); return; }
     if (s == "ARM") { portENTER_CRITICAL(&stateMux); motorsArmed = true; portEXIT_CRITICAL(&stateMux); Serial.println("ARMED"); return; }
     if (s == "DISARM") { portENTER_CRITICAL(&stateMux); motorsArmed = false; airmodeAllowed = false; portEXIT_CRITICAL(&stateMux); stopMotors(); Serial.println("DISARMED"); return; }
     if (s == "ACRO") { portENTER_CRITICAL(&stateMux); flightMode = MODE_ACRO; portEXIT_CRITICAL(&stateMux); return; }
@@ -1086,8 +683,9 @@ void parseSerialLine(String &line) {
         return;
     }
     if (s == "STATUS") {
-        TelemetryData snap; portENTER_CRITICAL(&telemetryMux); snap = telemetry; portEXIT_CRITICAL(&telemetryMux);
-        Serial.printf("R=%.1f P=%.1f Y=%.1f | M:%d %d %d %d | Loop:%dus | Trim: R=%.1f P=%.1f\n", 
+        TelemetryData snap;
+        Telemetry::snapshot(snap);
+        Serial.printf("R=%.1f P=%.1f Y=%.1f | M:%d %d %d %d | Loop:%dus | Trim: R=%.1f P=%.1f\n",
                       snap.roll, snap.pitch, snap.yaw, snap.m1, snap.m2, snap.m3, snap.m4, snap.loopTime,
                       snap.trimRoll, snap.trimPitch);
         return;
